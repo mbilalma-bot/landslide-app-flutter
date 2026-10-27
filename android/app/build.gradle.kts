@@ -34,7 +34,21 @@ android {
         release {
             // TODO: Add your own signing config for the release build.
             // Signing with the debug keys for now, so `flutter run --release` works.
+
+            // Konfigurasi signing/tanda tangan, id nya yaitu debug, tujuan untuk pengujian, bukan untuk diakses pengguna
             signingConfig = signingConfigs.getByName("debug")
+        }
+    }
+
+    // Mengubah nama APK release berdasarkan versi Flutter.
+    applicationVariants.all {
+        if (buildType.name == "release") {
+            outputs.all {
+                val output =
+                    this as com.android.build.gradle.internal.api.BaseVariantOutputImpl
+
+                output.outputFileName = "LandslideApp-${versionName}.apk"
+            }
         }
     }
 }
