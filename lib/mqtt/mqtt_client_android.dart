@@ -9,6 +9,7 @@ import 'package:mqtt_client/mqtt_client.dart';
 // Hanya gunakan server_client untuk Android/Desktop, hapus browser_client
 import 'package:mqtt_client/mqtt_server_client.dart';
 import 'package:landslide_app/supabase/supabase_service.dart';
+import 'package:landslide_app/supabase/supabase_config.dart';
 
 class MqttHandler extends ChangeNotifier {
   static const String _sensorDataCacheKey = 'dashboard_sensor_data_cache_v1';
@@ -252,7 +253,7 @@ class MqttHandler extends ChangeNotifier {
       }
 
       final internetOk = await _checkInternet();
-      await _setInternetStatus(internetOk, force: true);
+      await _setInternetStatus(internetOk, force: internetOk);
       _ensureInternetProbing();
     });
   }
@@ -322,21 +323,31 @@ class MqttHandler extends ChangeNotifier {
     _isProbingInternet = true;
     try {
       final internetOk = await _checkInternet();
-      await _setInternetStatus(internetOk, force: true);
+      await _setInternetStatus(internetOk, force: internetOk);
     } finally {
       _isProbingInternet = false;
     }
   }
 
   Future<bool> _checkInternet() async {
-    try {
-      final result = await InternetAddress.lookup(
-        'example.com',
-      ).timeout(const Duration(seconds: 3));
-      return result.isNotEmpty && result.first.rawAddress.isNotEmpty;
-    } catch (_) {
-      return false;
+    final supabaseHost = Uri.parse(SupabaseConfig.url).host;
+    final hosts = <String>[
+      if (supabaseHost.isNotEmpty) supabaseHost,
+      'broker.emqx.io',
+      'google.com',
+    ];
+
+    for (final host in hosts) {
+      try {
+        final result = await InternetAddress.lookup(
+          host,
+        ).timeout(const Duration(seconds: 5));
+        if (result.isNotEmpty && result.first.rawAddress.isNotEmpty) {
+          return true;
+        }
+      } catch (_) {}
     }
+    return false;
   }
 
   Future<void> _setInternetStatus(bool internetOk, {bool force = false}) async {
