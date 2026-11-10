@@ -347,13 +347,20 @@ class SupabaseService {
   }
 
   Stream<List<RiwayatRow>> riwayatStream({int limit = 500}) {
+    // Ambil sejumlah `limit` data TERBARU (descending) dari database, lalu
+    // dibalik menjadi kronologis menaik. Hal ini agar deteksi transisi status
+    // di halaman Riwayat tetap menerima data secara berurutan (ascending),
+    // namun hanya mencakup data terbaru sesuai `limit`.
     return client
         .from('sensor_data')
         .stream(primaryKey: ['id'])
-        .order('waktu_update', ascending: true)
+        .order('waktu_update', ascending: false)
         .limit(limit)
         .map((event) {
-          return event.map((item) => RiwayatRow.fromMap(item)).toList();
+          final rows = event
+              .map((item) => RiwayatRow.fromMap(item))
+              .toList();
+          return rows.reversed.toList();
         });
   }
 
