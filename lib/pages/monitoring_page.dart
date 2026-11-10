@@ -40,10 +40,16 @@ class MonitoringPage extends StatelessWidget {
     final rawMqttData = mqttHandler?.sensorData ?? _fallbackSensorData;
 
     // Gunakan data MQTT jika id_perangkat/device_id cocok, atau gunakan fallback
-    final mqttDeviceId = (rawMqttData['device_id'] ?? rawMqttData['id_perangkat'])?.toString().trim();
-    final isMatchingMqtt = mqttDeviceId == null ||
-        mqttDeviceId.toLowerCase() == perangkat.idPerangkat.trim().toLowerCase() ||
-        (mqttDeviceId == 'ESP32-S3-Longsor' && perangkat.idPerangkat.toLowerCase().contains('esp32'));
+    final mqttDeviceId =
+        (rawMqttData['device_id'] ?? rawMqttData['id_perangkat'])
+            ?.toString()
+            .trim();
+    final isMatchingMqtt =
+        mqttDeviceId == null ||
+        mqttDeviceId.toLowerCase() ==
+            perangkat.idPerangkat.trim().toLowerCase() ||
+        (mqttDeviceId == 'ESP32-S3-Longsor' &&
+            perangkat.idPerangkat.toLowerCase().contains('esp32'));
     final data = isMatchingMqtt ? rawMqttData : _fallbackSensorData;
 
     final riskStatus = data['Status Kerawanan']?.toString() ?? 'Menunggu data';
@@ -69,11 +75,11 @@ class MonitoringPage extends StatelessWidget {
               helperText: _riskHelperText(mqttHandler),
             ),
             const SizedBox(height: 16),
-            _SensorOverviewCard(
+            _SensorValuesCard(data: data),
+            const SizedBox(height: 16),
+            _SensorChartsCard(
               idPerangkat: perangkat.idPerangkat,
               enabled: enableCharts,
-              data: data,
-              overallStatus: riskStatus,
             ),
           ],
         ),
@@ -104,12 +110,12 @@ class MonitoringPage extends StatelessWidget {
       return 'Dashboard berjalan dalam mode pratinjau.';
     }
     if (mqttHandler.isUsingCachedData) {
-      return 'Status ditampilkan dari data terakhir yang tersimpan lokal.';
+      return 'Menampilkan status terakhir yang tersimpan.';
     }
     if (!mqttHandler.hasInternet) {
-      return 'Koneksi internet sedang tidak tersedia. Menampilkan data terakhir.';
+      return 'Koneksi internet offline.';
     }
-    return 'Status kerentanan diperbarui secara realtime dari sensor yang terhubung.';
+    return 'Status diperbarui secara realtime.';
   }
 }
 
@@ -186,7 +192,9 @@ class _DeviceInfoLine extends StatelessWidget {
           child: Text(
             value,
             style: style.copyWith(
-              fontWeight: label == 'Nama Perangkat' ? FontWeight.w700 : FontWeight.w600,
+              fontWeight: label == 'Nama Perangkat'
+                  ? FontWeight.w700
+                  : FontWeight.w600,
             ),
             maxLines: 2,
             overflow: TextOverflow.ellipsis,
@@ -245,24 +253,227 @@ class _OverallStatusCard extends StatelessWidget {
   }
 }
 
-class _SensorOverviewCard extends StatefulWidget {
-  const _SensorOverviewCard({
-    required this.idPerangkat,
-    required this.enabled,
-    required this.data,
-    required this.overallStatus,
+// ---------------------------------------------------------------------------
+// Card nilai sensor (3 sensor, tanpa grafik)
+// ---------------------------------------------------------------------------
+
+class _SensorValuesCard extends StatelessWidget {
+  const _SensorValuesCard({required this.data});
+
+  final Map<String, dynamic> data;
+
+  static const _MetricPalette _tiltPalette = _MetricPalette(
+    name: 'Kemiringan',
+    accent: Color.fromARGB(255, 203, 60, 60),
+    background: Color.fromARGB(255, 248, 238, 238),
+    border: Color.fromARGB(255, 203, 60, 60),
+    icon: Icons.landscape_rounded,
+  );
+  static const _MetricPalette _humidityPalette = _MetricPalette(
+    name: 'Kelembapan Tanah',
+    accent: Color.fromARGB(255, 173, 182, 1),
+    background: Color.fromARGB(255, 252, 252, 234),
+    border: Color.fromARGB(255, 173, 182, 1),
+    icon: Icons.opacity_rounded,
+  );
+  static const _MetricPalette _rainPalette = _MetricPalette(
+    name: 'Hujan',
+    accent: Color(0xFF1565C0),
+    background: Color(0xFFEAF4FF),
+    border: Color(0xFF1565C0),
+    icon: Icons.water_drop_rounded,
+  );
+
+  /// Menampilkan nilai sensor dengan 2 angka di belakang koma.
+  /// Digit setelahnya DIPOTONG (bukan dibulatkan), misal 25.6789 -> "25.67".
+  static String _formatSensorValue(dynamic value) {
+    final parsed = value is num
+        ? value.toDouble()
+        : double.tryParse(value?.toString() ?? '');
+    if (parsed == null || parsed.isNaN || parsed.isInfinite) return '0.00';
+    final truncated = (parsed * 100).truncateToDouble() / 100;
+    return truncated.toStringAsFixed(2);
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(18),
+      decoration: cardDecoration(
+        backgroundColor: const Color(0xFFF5F5FB),
+        borderColor: const Color(0xFFE1E2F4),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          const Text(
+            'Nilai Sensor',
+            style: TextStyle(
+              fontSize: 16,
+              fontWeight: FontWeight.w800,
+              color: Color(0xFF2F241D),
+            ),
+          ),
+          const SizedBox(height: 14),
+          _SensorValueRow(
+            palette: _tiltPalette,
+            sensorName: 'Kemiringan',
+            statusText:
+                data['Status Kemiringan']?.toString() ?? 'Menunggu data',
+            valueText: _formatSensorValue(data['Sensor Kemiringan']),
+            // unit: '°',
+          ),
+          const SizedBox(height: 10),
+          _SensorValueRow(
+            palette: _humidityPalette,
+            sensorName: 'Kelembapan Tanah',
+            statusText:
+                data['Status Kelembapan']?.toString() ?? 'Menunggu data',
+            valueText: _formatSensorValue(data['Sensor Kelembapan']),
+            // unit: '%',
+          ),
+          const SizedBox(height: 10),
+          _SensorValueRow(
+            palette: _rainPalette,
+            sensorName: 'Hujan',
+            statusText: data['Status Hujan']?.toString() ?? 'Menunggu data',
+            valueText: _formatSensorValue(data['Sensor Hujan']),
+            // unit: 'mm',
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+/// Satu baris sensor: [Icon | Nama + Status] [Nilai]
+/// Layout mengikuti ilustrasi: icon+teks di kiri, nilai besar di tengah-kanan
+class _SensorValueRow extends StatelessWidget {
+  const _SensorValueRow({
+    required this.palette,
+    required this.sensorName,
+    required this.statusText,
+    required this.valueText,
+    // this.unit = '',
   });
+
+  final _MetricPalette palette;
+  final String sensorName;
+  final String statusText;
+  final String valueText;
+  // final String unit;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      decoration: BoxDecoration(
+        color: palette.background,
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: palette.border),
+      ),
+      child: IntrinsicHeight(
+        child: Row(
+          crossAxisAlignment: CrossAxisAlignment.stretch,
+          children: [
+            // Kolom kiri: icon
+            Container(
+              width: 64,
+              decoration: BoxDecoration(
+                color: palette.accent.withValues(alpha: 0.10),
+                borderRadius: const BorderRadius.only(
+                  topLeft: Radius.circular(15),
+                  bottomLeft: Radius.circular(15),
+                ),
+              ),
+              child: Center(
+                child: Icon(palette.icon, color: palette.accent, size: 28),
+              ),
+            ),
+            // Kolom tengah: nama sensor + status
+            Expanded(
+              child: Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 12,
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      sensorName,
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.w700,
+                        color: Color(0xFF2F241D),
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    StatusChip(label: statusText, color: palette.accent),
+                  ],
+                ),
+              ),
+            ),
+            // Kolom kanan: nilai sensor (center vertikal)
+            Container(
+              constraints: const BoxConstraints(minWidth: 72),
+              padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 12),
+              decoration: BoxDecoration(
+                color: palette.accent.withValues(alpha: 0.08),
+                borderRadius: const BorderRadius.only(
+                  topRight: Radius.circular(15),
+                  bottomRight: Radius.circular(15),
+                ),
+              ),
+              child: Center(
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    Text(
+                      valueText,
+                      style: TextStyle(
+                        fontSize: 26,
+                        fontWeight: FontWeight.w900,
+                        color: palette.accent,
+                        height: 1.1,
+                      ),
+                    ),
+                    // if (unit.isNotEmpty)
+                    //   Text(
+                    //     unit,
+                    //     style: TextStyle(
+                    //       fontSize: 11,
+                    //       fontWeight: FontWeight.w600,
+                    //       color: palette.accent.withValues(alpha: 0.75),
+                    //     ),
+                    //   ),
+                  ],
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Card grafik sensor (3 grafik dalam satu card)
+// ---------------------------------------------------------------------------
+
+class _SensorChartsCard extends StatefulWidget {
+  const _SensorChartsCard({required this.idPerangkat, required this.enabled});
 
   final String idPerangkat;
   final bool enabled;
-  final Map<String, dynamic> data;
-  final String overallStatus;
 
   @override
-  State<_SensorOverviewCard> createState() => _SensorOverviewCardState();
+  State<_SensorChartsCard> createState() => _SensorChartsCardState();
 }
 
-class _SensorOverviewCardState extends State<_SensorOverviewCard> {
+class _SensorChartsCardState extends State<_SensorChartsCard> {
   String get _chartCacheKey => 'monitoring_chart_cache_${widget.idPerangkat}';
 
   Timer? _pollTimer;
@@ -455,34 +666,70 @@ class _SensorOverviewCardState extends State<_SensorOverviewCard> {
 
   @override
   Widget build(BuildContext context) {
+    const tiltPalette = _MetricPalette(
+      name: 'Kemiringan',
+      accent: Color.fromARGB(255, 203, 60, 60),
+      background: Color.fromARGB(255, 248, 238, 238),
+      border: Color.fromARGB(255, 203, 60, 60),
+      icon: Icons.landscape_rounded,
+    );
+    const humidityPalette = _MetricPalette(
+      name: 'Kelembapan Tanah',
+      accent: Color.fromARGB(255, 173, 182, 1),
+      background: Color.fromARGB(255, 252, 252, 234),
+      border: Color.fromARGB(255, 173, 182, 1),
+      icon: Icons.opacity_rounded,
+    );
     const rainPalette = _MetricPalette(
       name: 'Hujan',
       accent: Color(0xFF1565C0),
       background: Color(0xFFEAF4FF),
-      border: Color(0xFFC8E1FF),
+      border: Color(0xFF1565C0),
       icon: Icons.water_drop_rounded,
     );
-    const tiltPalette = _MetricPalette(
-      name: 'Kemiringan',
-      accent: Color(0xFF2E7D32),
-      background: Color(0xFFEEF8F0),
-      border: Color(0xFFD1EAD5),
-      icon: Icons.landscape_rounded,
-    );
-    const humidityPalette = _MetricPalette(
-      name: 'Kelembapan',
-      accent: Color(0xFF00838F),
-      background: Color(0xFFEAFBFC),
-      border: Color(0xFFC8EEF2),
-      icon: Icons.opacity_rounded,
-    );
 
-    final chartsReady = widget.enabled && !_isInitialLoading && _rows.isNotEmpty;
-    final hasInternet = Provider.of<MqttHandler?>(context)?.hasInternet ?? false;
-    final chartMessage = _errorText ??
+    final chartsReady =
+        widget.enabled && !_isInitialLoading && _rows.isNotEmpty;
+    final hasInternet =
+        Provider.of<MqttHandler?>(context)?.hasInternet ?? false;
+    final chartMessage =
+        _errorText ??
         (hasInternet
             ? 'Belum ada data grafik dalam 24 jam terakhir.'
-            : 'Mode offline: grafik menampilkan cache terakhir (jika tersedia).');
+            : 'Mode offline: grafik menampilkan data terakhir.');
+
+    Widget buildChartContent({
+      required Color color,
+      required List<double> Function(SensorDataRow) valueSelector,
+    }) {
+      if (!widget.enabled) {
+        return const _ChartInfoBox(
+          message: 'Grafik dinonaktifkan untuk mode pengujian.',
+        );
+      }
+      if (_isInitialLoading) {
+        return const _ChartInfoBox(
+          child: Center(child: CircularProgressIndicator()),
+        );
+      }
+      if (chartsReady) {
+        final points = _rows
+            .map((row) {
+              final vals = valueSelector(row);
+              return _ChartPoint(
+                x: row.waktuUpdate,
+                y: vals[0].clamp(0, double.infinity),
+              );
+            })
+            .toList(growable: false);
+
+        return SizedBox(
+          height: 210,
+          child: _LineSensorChart(color: color, points: points),
+        );
+      }
+      return _ChartInfoBox(message: chartMessage);
+    }
 
     return Container(
       width: double.infinity,
@@ -495,7 +742,7 @@ class _SensorOverviewCardState extends State<_SensorOverviewCard> {
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           const Text(
-            'Monitoring Sensor',
+            'Grafik Sensor (24 Jam Terakhir)',
             style: TextStyle(
               fontSize: 16,
               fontWeight: FontWeight.w800,
@@ -503,106 +750,34 @@ class _SensorOverviewCardState extends State<_SensorOverviewCard> {
             ),
           ),
           const SizedBox(height: 16),
-          _MetricSectionCard(
-            title: 'Hujan',
-            valueLabel: 'Nilai Hujan',
-            valueText: '${widget.data['Sensor Hujan'] ?? 0}',
-            statusText: widget.data['Status Hujan']?.toString() ?? 'Menunggu data',
-            vulnerabilityText: widget.overallStatus,
-            palette: rainPalette,
-            chartTitle: 'Grafik Hujan 24 Jam',
-            chartContent: !widget.enabled
-                ? const _ChartInfoBox(
-                    message: 'Grafik dinonaktifkan untuk mode pengujian.',
-                  )
-                : _isInitialLoading
-                    ? const _ChartInfoBox(
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : chartsReady
-                        ? SizedBox(
-                            height: 210,
-                            child: _LineSensorChart(
-                              color: rainPalette.accent,
-                              points: _rows
-                                  .map(
-                                    (row) => _ChartPoint(
-                                      x: row.waktuUpdate,
-                                      y: row.nilaiHujan,
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                            ),
-                          )
-                        : _ChartInfoBox(message: chartMessage),
-          ),
-          const SizedBox(height: 12),
-          _MetricSectionCard(
-            title: 'Kemiringan',
-            valueLabel: 'Nilai Kemiringan',
-            valueText: '${widget.data['Sensor Kemiringan'] ?? 0}',
-            statusText: widget.data['Status Kemiringan']?.toString() ?? 'Menunggu data',
-            vulnerabilityText: widget.overallStatus,
+          // Grafik Kemiringan
+          _ChartSection(
             palette: tiltPalette,
-            chartTitle: 'Grafik Kemiringan 24 Jam',
-            chartContent: !widget.enabled
-                ? const _ChartInfoBox(
-                    message: 'Grafik dinonaktifkan untuk mode pengujian.',
-                  )
-                : _isInitialLoading
-                    ? const _ChartInfoBox(
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : chartsReady
-                        ? SizedBox(
-                            height: 210,
-                            child: _LineSensorChart(
-                              color: tiltPalette.accent,
-                              points: _rows
-                                  .map(
-                                    (row) => _ChartPoint(
-                                      x: row.waktuUpdate,
-                                      y: row.nilaiKemiringan,
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                            ),
-                          )
-                        : _ChartInfoBox(message: chartMessage),
+            title: 'Grafik Kemiringan',
+            content: buildChartContent(
+              color: tiltPalette.accent,
+              valueSelector: (row) => [row.nilaiKemiringan],
+            ),
           ),
           const SizedBox(height: 12),
-          _MetricSectionCard(
-            title: 'Kelembapan Tanah',
-            valueLabel: 'Nilai Kelembapan',
-            valueText: '${widget.data['Sensor Kelembapan'] ?? 0}',
-            statusText: widget.data['Status Kelembapan']?.toString() ?? 'Menunggu data',
-            vulnerabilityText: widget.overallStatus,
+          // Grafik Kelembapan Tanah
+          _ChartSection(
             palette: humidityPalette,
-            chartTitle: 'Grafik Kelembapan 24 Jam',
-            chartContent: !widget.enabled
-                ? const _ChartInfoBox(
-                    message: 'Grafik dinonaktifkan untuk mode pengujian.',
-                  )
-                : _isInitialLoading
-                    ? const _ChartInfoBox(
-                        child: Center(child: CircularProgressIndicator()),
-                      )
-                    : chartsReady
-                        ? SizedBox(
-                            height: 210,
-                            child: _LineSensorChart(
-                              color: humidityPalette.accent,
-                              points: _rows
-                                  .map(
-                                    (row) => _ChartPoint(
-                                      x: row.waktuUpdate,
-                                      y: row.nilaiKelembapan,
-                                    ),
-                                  )
-                                  .toList(growable: false),
-                            ),
-                          )
-                        : _ChartInfoBox(message: chartMessage),
+            title: 'Grafik Kelembapan Tanah',
+            content: buildChartContent(
+              color: humidityPalette.accent,
+              valueSelector: (row) => [row.nilaiKelembapan],
+            ),
+          ),
+          const SizedBox(height: 12),
+          // Grafik Hujan
+          _ChartSection(
+            palette: rainPalette,
+            title: 'Grafik Hujan',
+            content: buildChartContent(
+              color: rainPalette.accent,
+              valueSelector: (row) => [row.nilaiHujan],
+            ),
           ),
         ],
       ),
@@ -610,37 +785,26 @@ class _SensorOverviewCardState extends State<_SensorOverviewCard> {
   }
 }
 
-class _MetricSectionCard extends StatelessWidget {
-  const _MetricSectionCard({
-    required this.title,
-    required this.valueLabel,
-    required this.valueText,
-    required this.statusText,
-    required this.vulnerabilityText,
+/// Satu blok grafik dalam card grafik: judul + konten grafik
+class _ChartSection extends StatelessWidget {
+  const _ChartSection({
     required this.palette,
-    required this.chartTitle,
-    required this.chartContent,
+    required this.title,
+    required this.content,
   });
 
-  final String title;
-  final String valueLabel;
-  final String valueText;
-  final String statusText;
-  final String vulnerabilityText;
   final _MetricPalette palette;
-  final String chartTitle;
-  final Widget chartContent;
+  final String title;
+  final Widget content;
 
   @override
   Widget build(BuildContext context) {
-    final vulnerabilityPalette = getStatusPalette(vulnerabilityText);
-
     return Container(
       width: double.infinity,
-      padding: const EdgeInsets.all(16),
+      padding: const EdgeInsets.all(14),
       decoration: BoxDecoration(
-        color: palette.background,
-        borderRadius: BorderRadius.circular(20),
+        color: Colors.white.withValues(alpha: 0.86),
+        borderRadius: BorderRadius.circular(18),
         border: Border.all(color: palette.border),
       ),
       child: Column(
@@ -648,124 +812,29 @@ class _MetricSectionCard extends StatelessWidget {
         children: [
           Row(
             children: [
-              CircleAvatar(
-                radius: 20,
-                backgroundColor: palette.accent.withValues(alpha: 0.14),
-                child: Icon(palette.icon, color: palette.accent),
+              Container(
+                width: 12,
+                height: 12,
+                decoration: BoxDecoration(
+                  color: palette.accent,
+                  borderRadius: BorderRadius.circular(999),
+                ),
               ),
-              const SizedBox(width: 12),
+              const SizedBox(width: 8),
               Expanded(
                 child: Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 16,
+                    fontSize: 15,
                     fontWeight: FontWeight.w800,
                     color: Color(0xFF2F241D),
                   ),
                 ),
               ),
-              StatusChip(label: statusText, color: palette.accent),
             ],
           ),
-          const SizedBox(height: 14),
-          Row(
-            children: [
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      valueLabel,
-                      style: const TextStyle(
-                        color: Color(0xFF6E655F),
-                        fontWeight: FontWeight.w600,
-                      ),
-                    ),
-                    const SizedBox(height: 4),
-                    Text(
-                      valueText,
-                      style: const TextStyle(
-                        fontSize: 24,
-                        fontWeight: FontWeight.w800,
-                        color: Color(0xFF2F241D),
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-              const SizedBox(width: 12),
-              Expanded(
-                child: Container(
-                  padding: const EdgeInsets.all(12),
-                  decoration: BoxDecoration(
-                    color: vulnerabilityPalette.background.withValues(alpha: 0.72),
-                    borderRadius: BorderRadius.circular(16),
-                    border: Border.all(color: vulnerabilityPalette.border),
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Kerentanan',
-                        style: TextStyle(
-                          color: Color(0xFF6E655F),
-                          fontWeight: FontWeight.w600,
-                        ),
-                      ),
-                      const SizedBox(height: 6),
-                      Text(
-                        vulnerabilityText,
-                        style: TextStyle(
-                          fontWeight: FontWeight.w800,
-                          color: vulnerabilityPalette.foreground,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 16),
-          Container(
-            width: double.infinity,
-            padding: const EdgeInsets.all(14),
-            decoration: BoxDecoration(
-              color: Colors.white.withValues(alpha: 0.86),
-              borderRadius: BorderRadius.circular(18),
-              border: Border.all(color: palette.border),
-            ),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  children: [
-                    Container(
-                      width: 12,
-                      height: 12,
-                      decoration: BoxDecoration(
-                        color: palette.accent,
-                        borderRadius: BorderRadius.circular(999),
-                      ),
-                    ),
-                    const SizedBox(width: 8),
-                    Expanded(
-                      child: Text(
-                        chartTitle,
-                        style: const TextStyle(
-                          fontSize: 15,
-                          fontWeight: FontWeight.w800,
-                          color: Color(0xFF2F241D),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                chartContent,
-              ],
-            ),
-          ),
+          const SizedBox(height: 12),
+          content,
         ],
       ),
     );
@@ -774,7 +843,7 @@ class _MetricSectionCard extends StatelessWidget {
 
 class _ChartInfoBox extends StatelessWidget {
   const _ChartInfoBox({this.message, this.child})
-      : assert(message != null || child != null);
+    : assert(message != null || child != null);
 
   final String? message;
   final Widget? child;
@@ -804,7 +873,12 @@ class _LineSensorChart extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final spots = points
+    // Clamp semua nilai negatif menjadi 0
+    final clampedPoints = points
+        .map((p) => _ChartPoint(x: p.x, y: p.y < 0 ? 0 : p.y))
+        .toList(growable: false);
+
+    final spots = clampedPoints
         .map(
           (point) => FlSpot(point.x.millisecondsSinceEpoch.toDouble(), point.y),
         )
@@ -812,10 +886,13 @@ class _LineSensorChart extends StatelessWidget {
 
     final minX = spots.first.x;
     final maxX = spots.last.x;
-    final minY = points.map((point) => point.y).reduce((a, b) => a < b ? a : b);
-    final maxY = points.map((point) => point.y).reduce((a, b) => a > b ? a : b);
-    final ySpread = (maxY - minY).abs();
+
+    // minY selalu 0 (tidak ada nilai negatif)
+    const minY = 0.0;
+    final maxY = clampedPoints.map((p) => p.y).reduce((a, b) => a > b ? a : b);
+    final ySpread = maxY - minY;
     final yPadding = ySpread < 1 ? 1.0 : ySpread * 0.2;
+
     final xPadding = minX == maxX ? 60000.0 : 0.0;
     final xInterval = (maxX - minX) <= 0 ? 3600000.0 : (maxX - minX) / 4;
     final formatter = DateFormat('HH:mm');
@@ -824,7 +901,7 @@ class _LineSensorChart extends StatelessWidget {
       LineChartData(
         minX: minX - xPadding,
         maxX: maxX + xPadding,
-        minY: minY - yPadding,
+        minY: 0,
         maxY: maxY + yPadding,
         gridData: FlGridData(
           show: true,
@@ -872,6 +949,8 @@ class _LineSensorChart extends StatelessWidget {
               showTitles: true,
               reservedSize: 44,
               getTitlesWidget: (value, meta) {
+                // Jangan tampilkan label negatif
+                if (value < 0) return const SizedBox.shrink();
                 return Text(
                   value.toStringAsFixed(0),
                   style: const TextStyle(
