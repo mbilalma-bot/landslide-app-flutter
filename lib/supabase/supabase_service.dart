@@ -75,7 +75,7 @@ class SupabaseService {
           .eq('id_perangkat', idPerangkat.trim())
           .maybeSingle()
           .timeout(const Duration(seconds: 5));
-      
+
       if (response == null) return null;
       return PerangkatModel.fromMap(response);
     } catch (e) {
@@ -125,10 +125,7 @@ class SupabaseService {
         });
       } else if (existingDevice.namaPerangkat != cleanNama) {
         // Update nama di master jika berbeda
-        await updatePerangkat(
-          idPerangkat: cleanId,
-          namaPerangkat: cleanNama,
-        );
+        await updatePerangkat(idPerangkat: cleanId, namaPerangkat: cleanNama);
       }
 
       // 2. Jika ada userId, hubungkan perangkat ke user tersebut di registrasi_perangkat
@@ -244,11 +241,12 @@ class SupabaseService {
       return double.tryParse(v.toString()) ?? 0;
     }
 
-    final idPerangkat = (mqttData['device_id'] ??
-            mqttData['id_perangkat'] ??
-            'ESP32-S3-Longsor')
-        .toString()
-        .trim();
+    final idPerangkat =
+        (mqttData['device_id'] ??
+                mqttData['id_perangkat'] ??
+                'ESP32-S3-Longsor')
+            .toString()
+            .trim();
     final nilaiHujan = parseDouble(mqttData['Sensor Hujan']);
     final statusHujan = (mqttData['Status Hujan'] ?? 'N/A').toString();
     final nilaiKelembapan = parseDouble(mqttData['Sensor Kelembapan']);
@@ -291,7 +289,6 @@ class SupabaseService {
     int? limit,
   }) async {
     final since = DateTime.now()
-        .toUtc()
         .subtract(Duration(hours: hours))
         .toIso8601String();
     var filter = client
@@ -305,14 +302,17 @@ class SupabaseService {
       filter = filter.eq('id_perangkat', idPerangkat.trim());
     }
 
-    var transform = filter.order('waktu_update', ascending: true);
+    // Ambil sejumlah data TERBARU (descending) dari Supabase agar tidak
+    // terpotong oleh default limit 1000 baris PostgREST di sisi data awal/lama,
+    // kemudian dibalik (reversed) agar kronologis menaik untuk tampilan grafik.
+    final effectiveLimit = limit ?? 1000;
+    final res = await filter
+        .order('waktu_update', ascending: false)
+        .limit(effectiveLimit)
+        .timeout(const Duration(seconds: 8));
 
-    if (limit != null) {
-      transform = transform.limit(limit);
-    }
-
-    final res = await transform.timeout(const Duration(seconds: 6));
-    return (res as List).cast<Map<String, dynamic>>();
+    final list = (res as List).cast<Map<String, dynamic>>();
+    return list.reversed.toList();
   }
 
   // ==========================================
@@ -357,9 +357,7 @@ class SupabaseService {
         .order('waktu_update', ascending: false)
         .limit(limit)
         .map((event) {
-          final rows = event
-              .map((item) => RiwayatRow.fromMap(item))
-              .toList();
+          final rows = event.map((item) => RiwayatRow.fromMap(item)).toList();
           return rows.reversed.toList();
         });
   }
